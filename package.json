@@ -1,0 +1,26 @@
+{
+  "name": "classroom-monitor",
+  "version": "1.0.0",
+  "description": "Sistema de monitoreo de estudiantes",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Jhoel673/classroom-monitor.git"
+  },
+  "keywords": [],
+  "author": "Jhoel Vargas",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Jhoel673/classroom-monitor/issues"
+  },
+  "homepage": "https://github.com/Jhoel673/classroom-monitor#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mongoose": "^9.6.3"
+  }
+}
