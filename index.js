@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+require("./keepAlive");
 const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
@@ -127,4 +128,11 @@ app.get("/tiempo", (req, res) => {
 // 🚀 server
 server.listen(3000, () => {
   console.log("🚀 Server running on http://localhost:3000");
+});
+process.on("uncaughtException", (err) => {
+  console.log("🔥 Error no controlado:", err);
+});
+
+process.on("unhandledRejection", (err) => {
+  console.log("🔥 Promesa fallida:", err);
 });
