@@ -1,9 +1,10 @@
 const express = require("express");
 const cors = require("cors");
-require("./keepAlive");
 const mongoose = require("mongoose");
 const http = require("http");
 const { Server } = require("socket.io");
+
+require("./keepAlive");
 
 const app = express();
 const server = http.createServer(app);
@@ -14,121 +15,207 @@ const io = new Server(server, {
   }
 });
 
-// 🔗 MongoDB
-mongoose.connect("mongodb+srv://admin1:admin12345@classroom-monitor.5c128wf.mongodb.net/classroom?retryWrites=true&w=majority")
-  .then(() => console.log("🟢 MongoDB conectado"))
-  .catch(err => console.log("🔴 Error MongoDB", err));
-
 app.use(cors());
 app.use(express.json());
 
-// 📊 memoria temporal
-let tiempoSitios = {};
-let estados = {};
-let historial = {};
-let usuarios = {};
+/* =========================
+   MONGODB
+========================= */
 
-app.post("/login", (req, res) => {
+mongoose.connect("TU_URL_DE_MONGODB");
 
-  const { nombre, clase, password, deviceId } = req.body;
+mongoose.connection.once("open", () => {
+  console.log("🟢 MongoDB conectado");
+});
 
-  if (!nombre || !clase || !password || !deviceId) {
-    return res.json({ ok: false, msg: "datos incompletos" });
-  }
+/* =========================
+   MODELO
+========================= */
 
-  const key = nombre + "-" + clase;
+const ActividadSchema = new mongoose.Schema({
 
-  if (!usuarios[key]) {
-    usuarios[key] = {
-      nombre,
-      clase,
-      password,
-      deviceId
-    };
-  }
-
-  if (usuarios[key].password !== password) {
-    return res.json({ ok: false, msg: "password incorrecta" });
-  }
-
-  usuarios[key].deviceId = deviceId;
-
-  res.json({
-    ok: true,
-    user: usuarios[key]
-  });
+  estudiante: String,
+  clase: String,
+  dominio: String,
+  tiempo: Number,
+  ultima: Number
 
 });
 
-// 📡 actividad
-app.post("/actividad", (req, res) => {
+const Actividad = mongoose.model("Actividad", ActividadSchema);
 
-  const { nombre, clase, url } = req.body;
+/* =========================
+   MEMORIA TIEMPO REAL
+========================= */
 
-  if (!nombre || !clase || !url) {
-    return res.json({ ok: false });
-  }
+let tiempoSitios = {};
+let estados = {};
+let historial = {};
 
-  const estudiante = nombre + "-" + clase;
+/* =========================
+   RUTA PRINCIPAL
+========================= */
 
-  let dominio;
+app.get("/", (req, res) => {
+  res.send("🟢 Classroom Monitor Pro funcionando");
+});
+
+/* =========================
+   ACTIVIDAD
+========================= */
+
+app.post("/actividad", async (req, res) => {
 
   try {
-    dominio = new URL(url).hostname;
-  } catch {
-    return res.json({ ok: false });
+
+    const { nombre, clase, url } = req.body;
+
+    // validar datos
+    if (!nombre || !clase || !url) {
+      return res.json({ ok: false });
+    }
+
+    // nombre final
+    const estudiante = `${nombre} - ${clase}`;
+
+    // extraer dominio
+    let dominio;
+
+    try {
+      dominio = new URL(url).hostname;
+    } catch {
+      dominio = url;
+    }
+
+    // estado activo
+    estados[estudiante] = Date.now();
+
+    /* =========================
+       HISTORIAL
+    ========================= */
+
+    if (!historial[estudiante]) {
+      historial[estudiante] = [];
+    }
+
+    historial[estudiante].push({
+      url: dominio,
+      hora: new Date().toLocaleTimeString()
+    });
+
+    // limitar historial
+    if (historial[estudiante].length > 20) {
+      historial[estudiante].shift();
+    }
+
+    /* =========================
+       TIEMPO POR SITIO
+    ========================= */
+
+    if (!tiempoSitios[estudiante]) {
+      tiempoSitios[estudiante] = {};
+    }
+
+    if (!tiempoSitios[estudiante][dominio]) {
+
+      tiempoSitios[estudiante][dominio] = {
+        tiempo: 0,
+        ultima: Date.now()
+      };
+
+    }
+
+    const actual = tiempoSitios[estudiante][dominio];
+
+    const ahora = Date.now();
+
+    const diff = ahora - actual.ultima;
+
+    actual.tiempo += diff;
+
+    actual.ultima = ahora;
+
+    /* =========================
+       GUARDAR EN MONGODB
+    ========================= */
+
+    await Actividad.findOneAndUpdate(
+
+      {
+        estudiante,
+        dominio
+      },
+
+      {
+        estudiante,
+        clase,
+        dominio,
+        tiempo: actual.tiempo,
+        ultima: ahora
+      },
+
+      {
+        upsert: true
+      }
+
+    );
+
+    /* =========================
+       SOCKET REALTIME
+    ========================= */
+
+    io.emit("actividad", {
+      tiempo: tiempoSitios,
+      estados,
+      historial
+    });
+
+    console.log("✅ actividad:", estudiante, dominio);
+
+    res.json({ ok: true });
+
+  } catch (err) {
+
+    console.log("❌ error actividad:", err);
+
+    res.status(500).json({
+      ok: false
+    });
+
   }
 
-  if (!tiempoSitios[estudiante]) {
-    tiempoSitios[estudiante] = {};
-  }
+});
 
-  if (!tiempoSitios[estudiante][dominio]) {
-    tiempoSitios[estudiante][dominio] = {
-      tiempo: 0,
-      ultima: Date.now()
-    };
-  }
+/* =========================
+   SOCKET
+========================= */
 
-  const sitio = tiempoSitios[estudiante][dominio];
+io.on("connection", (socket) => {
 
-  const ahora = Date.now();
+  console.log("🟢 dashboard conectado");
 
-  sitio.tiempo += ahora - sitio.ultima;
-  sitio.ultima = ahora;
-
-  estados[estudiante] = Date.now();
-
-  if (!historial[estudiante]) historial[estudiante] = [];
-
-  historial[estudiante].push({
-    url,
-    hora: new Date().toLocaleTimeString()
-  });
-
-  if (historial[estudiante].length > 20) {
-    historial[estudiante].shift();
-  }
-
-  io.emit("actividad", {
+  socket.emit("actividad", {
     tiempo: tiempoSitios,
     estados,
     historial
   });
 
-  res.json({ ok: true });
-
 });
 
-// 📊 dashboard
-app.get("/tiempo", (req, res) => {
-  res.json(tiempoSitios);
+/* =========================
+   START
+========================= */
+
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
 
-// 🚀 server
-server.listen(3000, () => {
-  console.log("🚀 Server running on http://localhost:3000");
-});
+/* =========================
+   SEGURIDAD ANTI-CRASH
+========================= */
+
 process.on("uncaughtException", (err) => {
   console.log("🔥 Error no controlado:", err);
 });
