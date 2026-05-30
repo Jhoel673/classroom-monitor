@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+  <meta charset="UTF-8">
+  <title>Classroom Monitor Pro</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: linear-gradient(135deg, #0f172a, #1e293b);
+      color: white;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    /* PANEL IZQUIERDO */
+    #left {
+      width: 30%;
+      background: rgba(255, 255, 255, 0.05);
+      backdrop-filter: blur(10px);
+      padding: 15px;
+      overflow-y: auto;
+      border-right: 1px solid rgba(255,255,255,0.1);
+    }
+
+    /* PANEL DERECHO */
+    #right {
+      width: 70%;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    /* TITULOS */
+    h2 {
+      margin: 0 0 10px 0;
+      color: #38bdf8;
+    }
+
+    h3 {
+      margin-top: 20px;
+      color: #93c5fd;
+    }
+
+    /* TARJETAS ESTUDIANTES */
+    .card {
+      background: rgba(255,255,255,0.08);
+      padding: 14px;
+      margin: 10px 0;
+      border-radius: 14px;
+      cursor: pointer;
+      transition: 0.3s;
+      border: 1px solid transparent;
+    }
+
+    .card:hover {
+      transform: scale(1.03);
+      border: 1px solid #38bdf8;
+      background: rgba(56,189,248,0.1);
+    }
+
+    /* ITEMS */
+    .item {
+      background: rgba(255,255,255,0.08);
+      margin: 10px 0;
+      padding: 14px;
+      border-radius: 12px;
+      border-left: 5px solid #38bdf8;
+      transition: 0.3s;
+    }
+
+    .item:hover {
+      transform: translateX(5px);
+      background: rgba(255,255,255,0.12);
+    }
+
+    /* ESTADISTICAS */
+    .stats {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+
+    .stat-box {
+      flex: 1;
+      min-width: 140px;
+      background: rgba(255,255,255,0.08);
+      padding: 15px;
+      border-radius: 14px;
+      text-align: center;
+    }
+
+    .stat-box h1 {
+      margin: 0;
+      color: #38bdf8;
+    }
+
+    .stat-box p {
+      margin: 5px 0 0;
+      color: #cbd5e1;
+    }
+
+    /* SCROLL */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #38bdf8;
+      border-radius: 10px;
+    }
+
+    /* LOGO */
+    #logo {
+      font-size: 22px;
+      font-weight: bold;
+      margin-bottom: 20px;
+      color: #38bdf8;
+    }
+
+    .estado {
+      margin-top: 5px;
+      font-size: 14px;
+    }
+
+  </style>
+</head>
+
+<body>
+
+  <!-- PANEL IZQUIERDO -->
+  <div id="left">
+
+    <div id="logo">
+      🎓 Classroom Monitor Pro
+    </div>
+
+    <h3>📋 Estudiantes activos</h3>
+
+    <div id="lista"></div>
+
+  </div>
+
+  <!-- PANEL DERECHO -->
+  <div id="right">
+
+    <div class="stats">
+
+      <div class="stat-box">
+        <h1 id="totalEstudiantes">0</h1>
+        <p>Estudiantes</p>
+      </div>
+
+      <div class="stat-box">
+        <h1 id="totalSitios">0</h1>
+        <p>Sitios visitados</p>
+      </div>
+
+      <div class="stat-box">
+        <h1 id="activos">0</h1>
+        <p>Activos ahora</p>
+      </div>
+
+    </div>
+
+    <div id="content">
+      <h2>🚀 Sistema activo</h2>
+      <p>Selecciona un estudiante para ver detalles.</p>
+    </div>
+
+  </div>
+
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+
+  <script>
+
+    const socket = io("https://classroom-monitor-bcfi.onrender.com");
+
+    let tiempo = {};
+    let estados = {};
+    let historial = {};
+
+    socket.on("actividad", (data) => {
+
+      tiempo = data.tiempo || {};
+      estados = data.estados || {};
+      historial = data.historial || {};
+
+      render();
+
+    });
+
+    function render() {
+
+      const lista = document.getElementById("lista");
+
+      lista.innerHTML = "";
+
+      const estudiantes = Object.keys(tiempo)
+        .filter(e => e && !e.includes("undefined"));
+
+      // stats
+      document.getElementById("totalEstudiantes").innerText =
+        estudiantes.length;
+
+      let totalSitios = 0;
+      let activos = 0;
+
+      estudiantes.forEach(est => {
+
+        totalSitios += Object.keys(tiempo[est]).length;
+
+        const last = estados[est] || 0;
+        const diff = Math.floor((Date.now() - last) / 1000);
+
+        let estado = "🟢 Activo";
+
+        if (diff > 10) estado = "🟡 Ausente";
+        if (diff > 30) estado = "🔴 Desconectado";
+
+        if (diff <= 10) activos++;
+
+        const div = document.createElement("div");
+
+        div.className = "card";
+
+        div.innerHTML = `
+          <b>${est}</b>
+          <div class="estado">${estado}</div>
+        `;
+
+        div.onclick = () => mostrar(est);
+
+        lista.appendChild(div);
+
+      });
+
+      document.getElementById("totalSitios").innerText = totalSitios;
+      document.getElementById("activos").innerText = activos;
+
+    }
+
+    function mostrar(est) {
+
+      const cont = document.getElementById("content");
+
+      let html = `
+        <h2>👤 ${est}</h2>
+
+        <h3>📡 Actividad reciente</h3>
+      `;
+
+      if (historial[est] && historial[est].length > 0) {
+
+        historial[est]
+          .slice()
+          .reverse()
+          .forEach(item => {
+
+            html += `
+              <div class="item">
+                🌐 ${item.url}<br>
+                🕒 ${item.hora}
+              </div>
+            `;
+
+          });
+
+      } else {
+
+        html += `
+          <div class="item">
+            Sin actividad reciente
+          </div>
+        `;
+
+      }
+
+      html += `<h3>⏱ Tiempo por sitio</h3>`;
+
+      if (tiempo[est]) {
+
+        for (let sitio in tiempo[est]) {
+
+          const seg = Math.floor(
+            tiempo[est][sitio].tiempo / 1000
+          );
+
+          html += `
+            <div class="item">
+              🌍 ${sitio}<br>
+              ⏱ ${seg} segundos
+            </div>
+          `;
+
+        }
+
+      }
+
+      cont.innerHTML = html;
+
+    }
+
+  </script>
+
+</body>
+</html>
